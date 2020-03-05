@@ -22,8 +22,6 @@ def _android_jar(android_api_level):
     return Label("@androidsdk//:platforms/android-%s/android.jar" % android_api_level)
 
 def _javadoc_library(ctx):
-    _check_non_empty(ctx.attr.root_packages, "root_packages")
-
     transitive_deps = []
     for dep in ctx.attr.deps:
         if JavaInfo in dep:
@@ -39,17 +37,18 @@ def _javadoc_library(ctx):
     javadoc_command = [
         java_home + "/bin/javadoc",
         '-sourcepath $(find * -type d -name "*java" -print0 | tr "\\0" :)',
-        " ".join(ctx.attr.root_packages),
         "-use",
-        "-subpackages",
-        ":".join(ctx.attr.root_packages),
         "-encoding UTF8",
         "-classpath",
         ":".join([jar.path for jar in classpath]),
         "-notimestamp",
-        "-d tmp",
+        "-d javadoc",
         "-Xdoclint:-missing",
         "-quiet",
+    ] + (ctx.attr.extra_args or []) + [
+        " ".join([" ".join(
+            [file.path for file in src.files.to_list()])
+            for src in ctx.attr.srcs]),
     ]
 
     if ctx.attr.doctitle:
@@ -66,7 +65,9 @@ def _javadoc_library(ctx):
 
     # TODO(ronshapiro): Should we be using a different tool that doesn't include
     # timestamp info?
-    jar_command = "%s/bin/jar cf %s -C tmp ." % (java_home, ctx.outputs.jar.path)
+    jar_command = "%s/bin/jar cf %s -C javadoc ." % (
+        java_home,
+        ctx.outputs.jar.path)
 
     srcs = depset(transitive = [src.files for src in ctx.attr.srcs]).to_list()
     ctx.actions.run_shell(
@@ -87,6 +88,9 @@ javadoc_library = rule(
         "exclude_packages": attr.string_list(),
         "android_api_level": attr.int(default = -1),
         "bottom_text": attr.string(default = ""),
+        "extra_args": attr.string_list(
+            mandatory = False,
+        ),
         "external_javadoc_links": attr.string_list(),
         "_android_jar": attr.label(
             default = _android_jar,
@@ -97,7 +101,9 @@ javadoc_library = rule(
             providers = [java_common.JavaRuntimeInfo],
         ),
     },
-    outputs = {"jar": "%{name}.jar"},
+    outputs = {
+        "jar": "%{name}.jar",
+    },
     implementation = _javadoc_library,
 )
 
